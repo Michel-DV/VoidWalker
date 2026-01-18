@@ -4,8 +4,13 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.x-green.svg)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macos-lightgrey)
 
 ---
+## 📸 Preview
+![VoidWalker in action](screenshot_demo.png)
+
+*Example of VoidWalker detecting a simulated Botnet Risk (Red) and a Configuration Risk (Yellow).*
 
 ## 🛡️ Overview
 In an era of vulnerable IoT hardware, **VoidWalker** provides an efficient way to audit your network. It scans for specific ports often targeted by malware or left exposed by poor configurations, attempting to perform "Banner Grabbing" to verify the service identity.
