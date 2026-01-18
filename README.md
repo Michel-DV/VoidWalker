@@ -48,7 +48,7 @@ VoidWalker monitors the following critical entry points:
 Run the script directly from your terminal:
 
 ```bash
-python VoidWalker1.1.py
+python VoidWalker.py
 
 ```
 
