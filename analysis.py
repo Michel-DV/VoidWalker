@@ -152,8 +152,7 @@ def build_device_profiles(
         names = sorted({record.name for record in records if record.name})
         sources = sorted({record.protocol for record in records})
         services = sorted(
-            {finding.service for finding in host_findings}
-            | {record.service for record in records}
+            {finding.service for finding in host_findings} | {record.service for record in records}
         )
 
         manufacturer = next(
