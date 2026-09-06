@@ -98,6 +98,9 @@ class OutputTests(unittest.TestCase):
         payload = json.loads(vw.report_to_json(report))
         self.assertEqual(payload["tool"], "VoidWalker")
         self.assertEqual(payload["hosts_scanned"], 1)
+        self.assertEqual(payload["version"], "2.1.0")
+        self.assertEqual(payload["devices"], [])
+        self.assertEqual(payload["indicators"], [])
 
     def test_main_rejects_public_scope(self) -> None:
         stderr = io.StringIO()
@@ -109,6 +112,24 @@ class OutputTests(unittest.TestCase):
     def test_default_network_falls_back_to_loopback(self) -> None:
         with patch("VoidWalker.get_local_ipv4", return_value="127.0.0.1"):
             self.assertEqual(str(vw.default_network()), "127.0.0.1/32")
+
+    def test_discovery_can_be_disabled(self) -> None:
+        report = vw.ScanReport(
+            network="127.0.0.1/32",
+            hosts_scanned=1,
+            ports_scanned=[],
+            findings=[],
+            duration_ms=1,
+            interrupted=False,
+        )
+        enriched = vw.enrich_report(
+            report,
+            vw.validate_network("127.0.0.1/32"),
+            discovery_mode="off",
+            discovery_timeout=0.1,
+            fetch_descriptions=False,
+        )
+        self.assertEqual(enriched.discovery_records, [])
 
 
 if __name__ == "__main__":
