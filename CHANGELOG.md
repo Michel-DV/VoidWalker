@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- SSDP/UPnP discovery over UDP/1900
+- mDNS/DNS-SD discovery over UDP/5353
+- bounded same-host UPnP XML device-description retrieval
+- device name, manufacturer, model, type, source, and service correlation
+- lightweight vendor/device-type inference
+- vulnerability-candidate engine with confidence levels
+- RomPager affected-range detection for CVE-2014-9222
+- Boa 0.94.14rc21 detection for CVE-2018-21027 and CVE-2018-21028
+- explicit IoT malware-family string triage
+- low-confidence multi-surface compromise-suspicion heuristic
+- `--discovery`, `--discovery-timeout`, and `--no-descriptions`
+- JSON `discovery_records`, `devices`, and `indicators` sections
+- detection-model documentation
+- offline SSDP, mDNS, fingerprint, vulnerability, and compromise-indicator tests
+
+### Changed
+
+- expanded the IoT TCP profile with RTSP, IPP, alternate web-management, and uncommon embedded services
+- reframed the primary report around device intelligence, exposures, and vulnerability/compromise triage
+- increased collected banner evidence length from 160 to 240 characters
+- preserved UDP/1900 and UDP/5353 as discovery protocols instead of misclassifying them as TCP findings
+
+### Security
+
+- public Internet scopes remain rejected
+- SSDP description retrieval is same-host, HTTP-only, bounded, and does not follow redirects
+- vulnerability matches are fingerprint-based and do not trigger or exploit the candidate issue
+- compromise output remains confidence-scored and explicitly non-conclusive
+
 ## 2.0.0
 
 ### Added
