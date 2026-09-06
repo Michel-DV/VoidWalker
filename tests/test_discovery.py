@@ -9,9 +9,7 @@ import discovery
 
 def rr(name: str, rr_type: int, rdata: bytes, ttl: int = 120) -> bytes:
     return (
-        discovery._encode_dns_name(name)
-        + struct.pack("!HHIH", rr_type, 1, ttl, len(rdata))
-        + rdata
+        discovery._encode_dns_name(name) + struct.pack("!HHIH", rr_type, 1, ttl, len(rdata)) + rdata
     )
 
 
