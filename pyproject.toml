@@ -1,7 +1,7 @@
 [project]
 name = "voidwalker"
-version = "2.0.0"
-description = "Local IoT TCP exposure auditor"
+version = "2.1.0"
+description = "Local IoT discovery, exposure, vulnerability-candidate, and compromise-triage auditor"
 requires-python = ">=3.11"
 
 [tool.ruff]
