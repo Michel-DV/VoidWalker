@@ -6,9 +6,9 @@ import json
 import socket
 import sys
 import time
+from collections.abc import Iterable, Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
-from typing import Iterable, Iterator
 
 VERSION = "2.0.0"
 DEFAULT_WORKERS = 128
@@ -50,26 +50,129 @@ class ScanReport:
 
 
 IOT_RULES: dict[int, PortRule] = {
-    21: PortRule(21, "FTP", "legacy-cleartext", "medium", "FTP commonly exposes credentials and data in cleartext.", "passive"),
-    23: PortRule(23, "Telnet", "legacy-cleartext", "high", "Telnet exposes an unauthenticated or weakly protected management surface on many IoT devices.", "passive"),
-    2323: PortRule(2323, "Telnet (alternate)", "legacy-cleartext", "high", "Alternate Telnet ports are frequently used by embedded devices.", "passive"),
-    445: PortRule(445, "SMB", "file-sharing", "medium", "SMB exposure may be unnecessary on embedded devices; verify that it is expected and patched."),
-    5555: PortRule(5555, "ADB / debug service", "debug-interface", "high", "Android Debug Bridge or vendor debug services should not normally be exposed to untrusted peers."),
-    5431: PortRule(5431, "UPnP control / vendor service", "management", "medium", "Vendor management services should be reviewed for necessity and access control."),
-    7547: PortRule(7547, "TR-069 / CWMP", "management", "high", "CPE management interfaces should be tightly restricted to trusted management networks."),
-    8080: PortRule(8080, "HTTP alternate / admin UI", "web-management", "medium", "Alternate HTTP ports often host device administration panels.", "http"),
-    8888: PortRule(8888, "HTTP alternate", "web-management", "medium", "Alternate HTTP ports may expose management or debug interfaces.", "http"),
-    37215: PortRule(37215, "Vendor management service", "legacy-vendor-service", "high", "Historically associated with vulnerable CPE implementations; an open port alone is not proof of compromise."),
-    52869: PortRule(52869, "Vendor SDK service", "legacy-vendor-service", "medium", "Historically associated with embedded SDK services; verify device model, firmware, and exposure."),
+    21: PortRule(
+        21,
+        "FTP",
+        "legacy-cleartext",
+        "medium",
+        "FTP commonly exposes credentials and data in cleartext.",
+        "passive",
+    ),
+    23: PortRule(
+        23,
+        "Telnet",
+        "legacy-cleartext",
+        "high",
+        "Telnet exposes an unauthenticated or weakly protected management surface on many IoT devices.",
+        "passive",
+    ),
+    2323: PortRule(
+        2323,
+        "Telnet (alternate)",
+        "legacy-cleartext",
+        "high",
+        "Alternate Telnet ports are frequently used by embedded devices.",
+        "passive",
+    ),
+    445: PortRule(
+        445,
+        "SMB",
+        "file-sharing",
+        "medium",
+        "SMB exposure may be unnecessary on embedded devices; verify that it is expected and patched.",
+    ),
+    5555: PortRule(
+        5555,
+        "ADB / debug service",
+        "debug-interface",
+        "high",
+        "Android Debug Bridge or vendor debug services should not normally be exposed to untrusted peers.",
+    ),
+    5431: PortRule(
+        5431,
+        "UPnP control / vendor service",
+        "management",
+        "medium",
+        "Vendor management services should be reviewed for necessity and access control.",
+    ),
+    7547: PortRule(
+        7547,
+        "TR-069 / CWMP",
+        "management",
+        "high",
+        "CPE management interfaces should be tightly restricted to trusted management networks.",
+    ),
+    8080: PortRule(
+        8080,
+        "HTTP alternate / admin UI",
+        "web-management",
+        "medium",
+        "Alternate HTTP ports often host device administration panels.",
+        "http",
+    ),
+    8888: PortRule(
+        8888,
+        "HTTP alternate",
+        "web-management",
+        "medium",
+        "Alternate HTTP ports may expose management or debug interfaces.",
+        "http",
+    ),
+    37215: PortRule(
+        37215,
+        "Vendor management service",
+        "legacy-vendor-service",
+        "high",
+        "Historically associated with vulnerable CPE implementations; an open port alone is not proof of compromise.",
+    ),
+    52869: PortRule(
+        52869,
+        "Vendor SDK service",
+        "legacy-vendor-service",
+        "medium",
+        "Historically associated with embedded SDK services; verify device model, firmware, and exposure.",
+    ),
 }
 
 COMMON_RULES: dict[int, PortRule] = {
     **IOT_RULES,
-    22: PortRule(22, "SSH", "remote-management", "info", "SSH may be expected; verify strong authentication and current firmware.", "passive"),
-    80: PortRule(80, "HTTP", "web-management", "info", "HTTP may expose a device UI; prefer HTTPS where supported.", "http"),
-    443: PortRule(443, "HTTPS", "web-management", "info", "HTTPS management interface detected; review authentication and firmware version."),
-    1883: PortRule(1883, "MQTT", "iot-messaging", "medium", "MQTT without transport encryption should be restricted and authenticated."),
-    8883: PortRule(8883, "MQTT over TLS", "iot-messaging", "info", "MQTT over TLS detected; review broker authentication and authorization."),
+    22: PortRule(
+        22,
+        "SSH",
+        "remote-management",
+        "info",
+        "SSH may be expected; verify strong authentication and current firmware.",
+        "passive",
+    ),
+    80: PortRule(
+        80,
+        "HTTP",
+        "web-management",
+        "info",
+        "HTTP may expose a device UI; prefer HTTPS where supported.",
+        "http",
+    ),
+    443: PortRule(
+        443,
+        "HTTPS",
+        "web-management",
+        "info",
+        "HTTPS management interface detected; review authentication and firmware version.",
+    ),
+    1883: PortRule(
+        1883,
+        "MQTT",
+        "iot-messaging",
+        "medium",
+        "MQTT without transport encryption should be restricted and authenticated.",
+    ),
+    8883: PortRule(
+        8883,
+        "MQTT over TLS",
+        "iot-messaging",
+        "info",
+        "MQTT over TLS detected; review broker authentication and authorization.",
+    ),
 }
 
 PROFILES: dict[str, dict[int, PortRule]] = {
@@ -107,9 +210,14 @@ def validate_network(value: str | None) -> ipaddress.IPv4Network:
     if not isinstance(network, ipaddress.IPv4Network):
         raise ScopeError("VoidWalker v2 currently supports IPv4 networks only")
     if network.num_addresses > MAX_HOSTS:
-        raise ScopeError(f"scope contains {network.num_addresses} addresses; maximum is {MAX_HOSTS}")
+        raise ScopeError(
+            f"scope contains {network.num_addresses} addresses; maximum is {MAX_HOSTS}"
+        )
     if not (network.is_private or network.is_loopback or network.is_link_local):
-        raise ScopeError("public Internet ranges are intentionally out of scope; use a private, loopback, or link-local network")
+        raise ScopeError(
+            "public Internet ranges are intentionally out of scope; "
+            "use a private, loopback, or link-local network"
+        )
     return network
 
 
@@ -159,7 +267,13 @@ def rules_for(profile: str, custom_ports: list[int] | None) -> dict[int, PortRul
     return {
         port: known.get(
             port,
-            PortRule(port, "unknown", "custom", "info", "Custom TCP port selected by the operator."),
+            PortRule(
+                port,
+                "unknown",
+                "custom",
+                "info",
+                "Custom TCP port selected by the operator.",
+            ),
         )
         for port in custom_ports
     }
@@ -173,7 +287,9 @@ def _sanitize_banner(data: bytes, limit: int = 160) -> str | None:
     return text[:limit] or None
 
 
-def _probe_socket(sock: socket.socket, host: str, rule: PortRule, banner_timeout: float) -> str | None:
+def _probe_socket(
+    sock: socket.socket, host: str, rule: PortRule, banner_timeout: float
+) -> str | None:
     if banner_timeout <= 0 or rule.probe == "none":
         return None
     sock.settimeout(banner_timeout)
@@ -186,7 +302,9 @@ def _probe_socket(sock: socket.socket, host: str, rule: PortRule, banner_timeout
         return None
 
 
-def scan_endpoint(host: str, rule: PortRule, timeout: float, banner_timeout: float) -> Finding | None:
+def scan_endpoint(
+    host: str, rule: PortRule, timeout: float, banner_timeout: float
+) -> Finding | None:
     try:
         with socket.create_connection((host, rule.port), timeout=timeout) as sock:
             evidence = _probe_socket(sock, host, rule, banner_timeout)
@@ -203,7 +321,9 @@ def scan_endpoint(host: str, rule: PortRule, timeout: float, banner_timeout: flo
         return None
 
 
-def _tasks(hosts: Iterable[ipaddress.IPv4Address], rules: dict[int, PortRule]) -> Iterator[tuple[str, PortRule]]:
+def _tasks(
+    hosts: Iterable[ipaddress.IPv4Address], rules: dict[int, PortRule]
+) -> Iterator[tuple[str, PortRule]]:
     for host in hosts:
         host_text = str(host)
         for port in sorted(rules):
@@ -251,7 +371,13 @@ def run_scan(
             for future in pending:
                 future.cancel()
 
-    findings.sort(key=lambda item: (ipaddress.ip_address(item.host), SEVERITY_ORDER.get(item.severity, 99), item.port))
+    findings.sort(
+        key=lambda item: (
+            ipaddress.ip_address(item.host),
+            SEVERITY_ORDER.get(item.severity, 99),
+            item.port,
+        )
+    )
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return ScanReport(
         network=str(network),
@@ -280,7 +406,10 @@ def report_to_json(report: ScanReport) -> str:
 def print_report(report: ScanReport) -> None:
     print(f"VoidWalker v{VERSION} - local IoT exposure auditor")
     print(f"Scope: {report.network}")
-    print(f"Hosts: {report.hosts_scanned} | TCP ports: {len(report.ports_scanned)} | Findings: {len(report.findings)}")
+    print(
+        f"Hosts: {report.hosts_scanned} | TCP ports: {len(report.ports_scanned)} | "
+        f"Findings: {len(report.findings)}"
+    )
     print("-" * 76)
 
     if not report.findings:
@@ -309,11 +438,32 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("-n", "--network", help="private IPv4 CIDR (default: detected local /24)")
-    parser.add_argument("--profile", choices=sorted(PROFILES), default="iot", help="built-in TCP port profile")
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILES),
+        default="iot",
+        help="built-in TCP port profile",
+    )
     parser.add_argument("-p", "--ports", help="custom TCP ports/ranges, e.g. 22,80,443,8000-8010")
-    parser.add_argument("-w", "--workers", type=int, default=DEFAULT_WORKERS, help=f"concurrent workers (1-{MAX_WORKERS})")
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="TCP connect timeout in seconds")
-    parser.add_argument("--banner-timeout", type=float, default=DEFAULT_BANNER_TIMEOUT, help="optional evidence-read timeout in seconds")
+    parser.add_argument(
+        "-w",
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help=f"concurrent workers (1-{MAX_WORKERS})",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT,
+        help="TCP connect timeout in seconds",
+    )
+    parser.add_argument(
+        "--banner-timeout",
+        type=float,
+        default=DEFAULT_BANNER_TIMEOUT,
+        help="optional evidence-read timeout in seconds",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON only")
     parser.add_argument("--version", action="version", version=f"VoidWalker v{VERSION}")
     return parser
