@@ -194,7 +194,7 @@ def discover_ssdp(
             while time.monotonic() < deadline:
                 try:
                     data, addr = sock.recvfrom(65535)
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
@@ -382,7 +382,7 @@ def discover_mdns(
             while time.monotonic() < deadline:
                 try:
                     data, _ = sock.recvfrom(65535)
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
