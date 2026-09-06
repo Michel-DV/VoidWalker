@@ -8,12 +8,16 @@ import sys
 import time
 from collections.abc import Iterable, Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 
-VERSION = "2.0.0"
+from analysis import DeviceProfile, Indicator, analyze_indicators, build_device_profiles
+from discovery import DiscoveryRecord, discover_devices
+
+VERSION = "2.1.0"
 DEFAULT_WORKERS = 128
 DEFAULT_TIMEOUT = 0.6
 DEFAULT_BANNER_TIMEOUT = 0.25
+DEFAULT_DISCOVERY_TIMEOUT = 0.8
 MAX_WORKERS = 256
 MAX_HOSTS = 4096
 
@@ -47,6 +51,9 @@ class ScanReport:
     findings: list[Finding]
     duration_ms: int
     interrupted: bool
+    discovery_records: list[DiscoveryRecord] = field(default_factory=list)
+    devices: list[DeviceProfile] = field(default_factory=list)
+    indicators: list[Indicator] = field(default_factory=list)
 
 
 IOT_RULES: dict[int, PortRule] = {
@@ -63,15 +70,32 @@ IOT_RULES: dict[int, PortRule] = {
         "Telnet",
         "legacy-cleartext",
         "high",
-        "Telnet exposes an unauthenticated or weakly protected management surface on many IoT devices.",
+        "Telnet is a high-risk management surface frequently targeted on embedded devices.",
         "passive",
+    ),
+    81: PortRule(
+        81,
+        "HTTP alternate",
+        "web-management",
+        "medium",
+        "Alternate HTTP ports are common on cameras and embedded administration interfaces.",
+        "http",
     ),
     2323: PortRule(
         2323,
         "Telnet (alternate)",
         "legacy-cleartext",
         "high",
-        "Alternate Telnet ports are frequently used by embedded devices.",
+        "Alternate Telnet ports are frequently exposed by embedded devices and targeted "
+        "by botnets.",
+        "passive",
+    ),
+    4321: PortRule(
+        4321,
+        "Uncommon embedded service",
+        "unidentified-management",
+        "medium",
+        "Uncommon embedded service detected; identify the owning process and device function.",
         "passive",
     ),
     445: PortRule(
@@ -79,14 +103,33 @@ IOT_RULES: dict[int, PortRule] = {
         "SMB",
         "file-sharing",
         "medium",
-        "SMB exposure may be unnecessary on embedded devices; verify that it is expected and patched.",
+        "SMB exposure may be unnecessary on embedded devices; verify that it is expected "
+        "and patched.",
     ),
-    5555: PortRule(
-        5555,
-        "ADB / debug service",
-        "debug-interface",
-        "high",
-        "Android Debug Bridge or vendor debug services should not normally be exposed to untrusted peers.",
+    554: PortRule(
+        554,
+        "RTSP",
+        "media-streaming",
+        "medium",
+        "RTSP commonly identifies cameras/NVRs; verify authentication, firmware, and "
+        "network exposure.",
+        "passive",
+    ),
+    631: PortRule(
+        631,
+        "IPP",
+        "printing",
+        "low",
+        "IPP often identifies printers or print appliances; review access control and firmware.",
+        "http",
+    ),
+    1883: PortRule(
+        1883,
+        "MQTT",
+        "iot-messaging",
+        "medium",
+        "MQTT without transport encryption should be restricted and authenticated.",
+        "passive",
     ),
     5431: PortRule(
         5431,
@@ -95,12 +138,29 @@ IOT_RULES: dict[int, PortRule] = {
         "medium",
         "Vendor management services should be reviewed for necessity and access control.",
     ),
+    5555: PortRule(
+        5555,
+        "ADB / debug service",
+        "debug-interface",
+        "high",
+        "Android Debug Bridge or vendor debug services should not normally be reachable by peers.",
+        "passive",
+    ),
     7547: PortRule(
         7547,
         "TR-069 / CWMP",
         "management",
         "high",
         "CPE management interfaces should be tightly restricted to trusted management networks.",
+        "passive",
+    ),
+    8000: PortRule(
+        8000,
+        "HTTP/vendor management",
+        "web-management",
+        "medium",
+        "Common alternate administration/API port on cameras, NVRs, and embedded appliances.",
+        "http",
     ),
     8080: PortRule(
         8080,
@@ -109,6 +169,13 @@ IOT_RULES: dict[int, PortRule] = {
         "medium",
         "Alternate HTTP ports often host device administration panels.",
         "http",
+    ),
+    8443: PortRule(
+        8443,
+        "HTTPS alternate / admin UI",
+        "web-management",
+        "info",
+        "Alternate HTTPS administration service detected.",
     ),
     8888: PortRule(
         8888,
@@ -123,14 +190,16 @@ IOT_RULES: dict[int, PortRule] = {
         "Vendor management service",
         "legacy-vendor-service",
         "high",
-        "Historically associated with vulnerable CPE implementations; an open port alone is not proof of compromise.",
+        "Historically associated with vulnerable CPE implementations; identify model and firmware.",
+        "passive",
     ),
     52869: PortRule(
         52869,
         "Vendor SDK service",
         "legacy-vendor-service",
         "medium",
-        "Historically associated with embedded SDK services; verify device model, firmware, and exposure.",
+        "Historically associated with embedded SDK services; verify model, firmware, and exposure.",
+        "passive",
     ),
 }
 
@@ -142,6 +211,14 @@ COMMON_RULES: dict[int, PortRule] = {
         "remote-management",
         "info",
         "SSH may be expected; verify strong authentication and current firmware.",
+        "passive",
+    ),
+    53: PortRule(
+        53,
+        "DNS",
+        "network-service",
+        "info",
+        "DNS service detected; expected on gateways and infrastructure appliances.",
         "passive",
     ),
     80: PortRule(
@@ -159,13 +236,6 @@ COMMON_RULES: dict[int, PortRule] = {
         "info",
         "HTTPS management interface detected; review authentication and firmware version.",
     ),
-    1883: PortRule(
-        1883,
-        "MQTT",
-        "iot-messaging",
-        "medium",
-        "MQTT without transport encryption should be restricted and authenticated.",
-    ),
     8883: PortRule(
         8883,
         "MQTT over TLS",
@@ -180,7 +250,7 @@ PROFILES: dict[str, dict[int, PortRule]] = {
     "common": COMMON_RULES,
 }
 
-SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 
 class ScopeError(ValueError):
@@ -208,7 +278,7 @@ def default_network() -> ipaddress.IPv4Network:
 def validate_network(value: str | None) -> ipaddress.IPv4Network:
     network = default_network() if not value else ipaddress.ip_network(value, strict=False)
     if not isinstance(network, ipaddress.IPv4Network):
-        raise ScopeError("VoidWalker v2 currently supports IPv4 networks only")
+        raise ScopeError("VoidWalker currently supports IPv4 networks only")
     if network.num_addresses > MAX_HOSTS:
         raise ScopeError(
             f"scope contains {network.num_addresses} addresses; maximum is {MAX_HOSTS}"
@@ -273,13 +343,14 @@ def rules_for(profile: str, custom_ports: list[int] | None) -> dict[int, PortRul
                 "custom",
                 "info",
                 "Custom TCP port selected by the operator.",
+                "passive",
             ),
         )
         for port in custom_ports
     }
 
 
-def _sanitize_banner(data: bytes, limit: int = 160) -> str | None:
+def _sanitize_banner(data: bytes, limit: int = 240) -> str | None:
     if not data:
         return None
     text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ")
@@ -297,7 +368,7 @@ def _probe_socket(
         if rule.probe == "http":
             request = f"HEAD / HTTP/1.0\r\nHost: {host}\r\nUser-Agent: VoidWalker/{VERSION}\r\n\r\n"
             sock.sendall(request.encode("ascii", errors="ignore"))
-        return _sanitize_banner(sock.recv(512))
+        return _sanitize_banner(sock.recv(1024))
     except (OSError, TimeoutError):
         return None
 
@@ -389,6 +460,33 @@ def run_scan(
     )
 
 
+def enrich_report(
+    report: ScanReport,
+    network: ipaddress.IPv4Network,
+    *,
+    discovery_mode: str,
+    discovery_timeout: float,
+    fetch_descriptions: bool,
+) -> ScanReport:
+    if report.interrupted or discovery_mode == "off":
+        records: list[DiscoveryRecord] = []
+    else:
+        records = discover_devices(
+            network,
+            mode=discovery_mode,
+            timeout=discovery_timeout,
+            fetch_descriptions=fetch_descriptions,
+        )
+    devices = build_device_profiles(report.findings, records)
+    indicators = analyze_indicators(report.findings, records)
+    return replace(
+        report,
+        discovery_records=records,
+        devices=devices,
+        indicators=indicators,
+    )
+
+
 def report_to_json(report: ScanReport) -> str:
     payload = {
         "tool": "VoidWalker",
@@ -397,44 +495,96 @@ def report_to_json(report: ScanReport) -> str:
         "hosts_scanned": report.hosts_scanned,
         "ports_scanned": report.ports_scanned,
         "findings": [asdict(item) for item in report.findings],
+        "discovery_records": [asdict(item) for item in report.discovery_records],
+        "devices": [asdict(item) for item in report.devices],
+        "indicators": [asdict(item) for item in report.indicators],
         "duration_ms": report.duration_ms,
         "interrupted": report.interrupted,
     }
     return json.dumps(payload, indent=2, sort_keys=False)
 
 
-def print_report(report: ScanReport) -> None:
-    print(f"VoidWalker v{VERSION} - local IoT exposure auditor")
-    print(f"Scope: {report.network}")
-    print(
-        f"Hosts: {report.hosts_scanned} | TCP ports: {len(report.ports_scanned)} | "
-        f"Findings: {len(report.findings)}"
-    )
-    print("-" * 76)
+def _print_devices(report: ScanReport) -> None:
+    if not report.devices:
+        return
+    print("DEVICE INTELLIGENCE")
+    for device in report.devices:
+        identity = " / ".join(
+            value for value in (device.manufacturer, device.model, device.device_type) if value
+        )
+        print(f"  {device.host}" + (f"  -> {identity}" if identity else ""))
+        if device.names:
+            print(f"      names: {', '.join(device.names)}")
+        if device.sources:
+            print(f"      discovery: {', '.join(device.sources)}")
+        if device.services:
+            print(f"      services: {', '.join(device.services)}")
+    print("-" * 84)
 
+
+def _print_findings(report: ScanReport) -> None:
+    print("TCP EXPOSURE FINDINGS")
     if not report.findings:
-        print("No selected TCP services were reachable in this scope.")
+        print("  No selected TCP services were reachable in this scope.")
     else:
         for finding in report.findings:
             print(
-                f"[{finding.severity.upper():6}] {finding.host}:{finding.port:<5} "
+                f"  [{finding.severity.upper():8}] {finding.host}:{finding.port:<5} "
                 f"{finding.service}  ({finding.category})"
             )
-            print(f"         {finding.note}")
+            print(f"             {finding.note}")
             if finding.evidence:
-                print(f"         evidence: {finding.evidence}")
+                print(f"             evidence: {finding.evidence}")
+    print("-" * 84)
 
-    print("-" * 76)
+
+def _print_indicators(report: ScanReport) -> None:
+    print("VULNERABILITY / COMPROMISE TRIAGE")
+    if not report.indicators:
+        print("  No built-in vulnerability or compromise signatures matched.")
+    else:
+        for indicator in report.indicators:
+            print(
+                f"  [{indicator.severity.upper():8}] {indicator.host} "
+                f"{indicator.kind} / confidence={indicator.confidence}"
+            )
+            print(f"             {indicator.title}")
+            print(f"             {indicator.rationale}")
+            if indicator.evidence:
+                print(f"             evidence: {', '.join(indicator.evidence)}")
+            if indicator.references:
+                print(f"             references: {', '.join(indicator.references)}")
+    print("-" * 84)
+
+
+def print_report(report: ScanReport) -> None:
+    print(f"VoidWalker v{VERSION} - IoT discovery, exposure and compromise triage")
+    print(f"Scope: {report.network}")
+    print(
+        f"Hosts: {report.hosts_scanned} | TCP ports: {len(report.ports_scanned)} | "
+        f"Open-service findings: {len(report.findings)} | "
+        f"Discovery records: {len(report.discovery_records)} | "
+        f"Indicators: {len(report.indicators)}"
+    )
+    print("-" * 84)
+
+    _print_devices(report)
+    _print_findings(report)
+    _print_indicators(report)
+
     suffix = " (interrupted)" if report.interrupted else ""
-    print(f"Finished in {report.duration_ms / 1000:.2f}s{suffix}")
-    print("Open ports are exposure signals, not proof of vulnerability or compromise.")
+    print(f"TCP scan finished in {report.duration_ms / 1000:.2f}s{suffix}")
+    print(
+        "Triage output is evidence-based but not proof: vulnerability candidates require "
+        "model/firmware confirmation, and compromise indicators require follow-up inspection."
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Concurrent TCP exposure auditor for private/local IPv4 networks. "
-            "It identifies reachable management and legacy services without exploitation."
+            "Concurrent IoT exposure auditor for private/local IPv4 networks with SSDP/mDNS "
+            "discovery, lightweight fingerprinting, and defensive vulnerability/compromise triage."
         )
     )
     parser.add_argument("-n", "--network", help="private IPv4 CIDR (default: detected local /24)")
@@ -464,6 +614,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BANNER_TIMEOUT,
         help="optional evidence-read timeout in seconds",
     )
+    parser.add_argument(
+        "--discovery",
+        choices=("off", "ssdp", "mdns", "all"),
+        default="all",
+        help="local service discovery mode (default: all)",
+    )
+    parser.add_argument(
+        "--discovery-timeout",
+        type=float,
+        default=DEFAULT_DISCOVERY_TIMEOUT,
+        help="SSDP/mDNS collection window per discovery protocol in seconds",
+    )
+    parser.add_argument(
+        "--no-descriptions",
+        action="store_true",
+        help="do not fetch same-host SSDP XML device descriptions",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON only")
     parser.add_argument("--version", action="version", version=f"VoidWalker v{VERSION}")
     return parser
@@ -478,6 +645,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--timeout must be between 0.05 and 5.0 seconds")
     if not 0 <= args.banner_timeout <= 2.0:
         parser.error("--banner-timeout must be between 0 and 2.0 seconds")
+    if not 0.05 <= args.discovery_timeout <= 3.0:
+        parser.error("--discovery-timeout must be between 0.05 and 3.0 seconds")
     return args
 
 
@@ -498,6 +667,24 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         banner_timeout=args.banner_timeout,
     )
+    try:
+        report = enrich_report(
+            report,
+            network,
+            discovery_mode=args.discovery,
+            discovery_timeout=args.discovery_timeout,
+            fetch_descriptions=not args.no_descriptions,
+        )
+    except KeyboardInterrupt:
+        report = replace(report, interrupted=True)
+        report = enrich_report(
+            report,
+            network,
+            discovery_mode="off",
+            discovery_timeout=args.discovery_timeout,
+            fetch_descriptions=False,
+        )
+
     if args.json:
         print(report_to_json(report))
     else:
