@@ -1,0 +1,32 @@
+name: Publish portfolio release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Publish v2.1.0
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.before }}
+        run: |
+          tag="v2.1.0"
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            git tag -a "$tag" "$TARGET_SHA" -m "VoidWalker v2.1.0"
+            git push origin "$tag"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag --title "VoidWalker v2.1.0" --notes "Defensive IoT discovery and triage auditor with local SSDP/mDNS discovery, service evidence, device fingerprinting, vulnerability candidates, compromise indicators, strict private-network scope, tests and CI."
+          fi
