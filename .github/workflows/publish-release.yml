@@ -20,11 +20,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event.before }}
+          TARGET_SHA: 35a4e7e009fa1f049e892fbb5944c5dea5a07f98
         run: |
           tag="v2.1.0"
           if ! git rev-parse "$tag" >/dev/null 2>&1; then
-            git tag -a "$tag" "$TARGET_SHA" -m "VoidWalker v2.1.0"
+            git tag "$tag" "$TARGET_SHA"
             git push origin "$tag"
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
