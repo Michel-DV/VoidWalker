@@ -1,0 +1,67 @@
+name: One-shot portfolio maintenance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/portfolio-maintenance.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Remove stale branches
+        shell: bash
+        run: |
+          branches=("feat/v2-iot-auditor" "feat/v2.1-discovery-intel" "tmp/portfolio-maintenance-delete-me")
+          for branch in "${branches[@]}"; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            else
+              echo "already absent: $branch"
+            fi
+          done
+
+      - name: Publish v2.1.0 release if missing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.before }}
+        run: |
+          tag="v2.1.0"
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git tag -a "$tag" "$TARGET_SHA" -m "VoidWalker v2.1.0"
+            git push origin "$tag"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag --title "VoidWalker v2.1.0" --notes "Defensive IoT discovery and triage auditor with local SSDP/mDNS discovery, service evidence, device fingerprinting, vulnerability candidates, compromise indicators, strict private-network scope, tests and CI."
+          fi
+
+      - name: Attempt repository presentation settings
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo_status=$(curl -sS -o /tmp/repo-settings.json -w "%{http_code}" -X PATCH -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/${GITHUB_REPOSITORY}" -d '{"description":"Defensive IoT discovery, exposure, vulnerability-candidate and compromise-triage auditor for authorized local networks.","has_wiki":false,"has_projects":false,"delete_branch_on_merge":true}')
+          topics_status=$(curl -sS -o /tmp/topics.json -w "%{http_code}" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/${GITHUB_REPOSITORY}/topics" -d '{"names":["cybersecurity","python","iot-security","network-security","asset-discovery","vulnerability-management","threat-detection"]}')
+          echo "repository-settings-http=$repo_status"
+          echo "topics-http=$topics_status"
+
+      - name: Remove this one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          git rm .github/workflows/portfolio-maintenance.yml
+          git commit -m "chore: remove one-shot portfolio maintenance workflow"
+          git push origin main
