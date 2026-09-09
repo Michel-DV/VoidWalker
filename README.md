@@ -1,186 +1,125 @@
 # VoidWalker
 
-**VoidWalker** is a zero-dependency Python IoT security auditor for private/local IPv4 networks.
-
-Its primary goal is to help identify **IoT devices that deserve immediate investigation** because they expose risky services, match known vulnerable software fingerprints, or show indicators that may be consistent with compromise.
-
-VoidWalker does this without exploitation, credential attacks, stealth scanning, persistence, or remote command execution.
+**Find IoT devices. See what they expose. Surface evidence that may indicate vulnerability or compromise.**
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![CI](https://github.com/Michel-DV/VoidWalker/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Scope](https://img.shields.io/badge/Scope-private%20networks-39ff88)
 
-## What v2.1 adds
+VoidWalker is a zero-dependency Python security auditor for **IoT and embedded devices on private/local IPv4 networks**.
 
-Version **2.1** moves VoidWalker from a focused TCP exposure scanner to an **IoT discovery + fingerprinting + defensive triage** tool while preserving its original purpose.
+It is not just a port scanner. In one run it combines TCP exposure checks with SSDP/UPnP and mDNS discovery, builds device context, and highlights hosts that deserve investigation because they show:
 
-The pipeline is now:
+- risky IoT management/debug services;
+- explicit vulnerable-software fingerprints;
+- malware-family strings in collected evidence;
+- combinations of services commonly targeted by IoT botnets.
+
+The result is **triage, not a malware verdict**: every vulnerability or compromise signal carries a confidence level and should be validated with network, firmware, or forensic follow-up.
+
+<p align="center">
+  <img src="docs/assets/triage-flow.svg" alt="VoidWalker IoT discovery and compromise-triage flow" width="100%" />
+</p>
+
+## See it before reading the internals
+
+The example below is a **synthetic lab run**, rendered from the current output model. It shows the part that matters most: device identity, exposure, and potential-compromise triage in one view.
+
+<p align="center">
+  <img src="docs/assets/demo-terminal.svg" alt="VoidWalker synthetic terminal demo showing IoT devices and compromise indicators" width="100%" />
+</p>
+
+[**Open the full synthetic demo walkthrough →**](docs/DEMO.md)
+
+## What VoidWalker actually gives you
+
+| Output | Why it matters |
+| --- | --- |
+| **Device intelligence** | Correlates host, advertised name, manufacturer, model, device type, discovery source and observed services. |
+| **Exposure findings** | Flags reachable IoT-relevant services such as Telnet, ADB/debug, RTSP, TR-069, MQTT and legacy vendor management. |
+| **Vulnerability candidates** | Matches explicit software fingerprints such as affected RomPager or Boa versions and reports confidence + references. |
+| **Compromise indicators** | Surfaces malware-family strings or suspicious combinations of botnet-targeted services as investigation leads. |
+| **JSON output** | Exports findings, discovery records, devices and indicators for further analysis or ingestion into another workflow. |
+
+### The key idea: find the device that deserves attention first
+
+A generic scanner might stop here:
 
 ```text
-Private/local IPv4 scope
-        |
-        +--> bounded concurrent TCP connect scan
-        |
-        +--> SSDP/UPnP discovery (UDP/1900)
-        |
-        +--> mDNS/DNS-SD discovery (UDP/5353)
-        |
-        +--> same-host SSDP device-description metadata
-        |
-        +--> device/vendor/type correlation
-        |
-        +--> vulnerability fingerprint matching
-        |
-        +--> compromise-indicator triage
-        |
-        +--> terminal or JSON report
+192.168.1.50:23 open
+192.168.1.50:5555 open
 ```
 
-## Core capabilities
-
-- concurrent TCP connect scanning with a bounded worker pool
-- private, loopback, or link-local IPv4 scope only
-- 4096-address maximum scope
-- IoT-focused and common-service profiles
-- custom TCP ports and ranges
-- passive service banners and minimal HTTP `HEAD` evidence
-- SSDP/UPnP discovery
-- mDNS/DNS-SD discovery for common IoT service types
-- optional same-host SSDP XML device descriptions
-- manufacturer/model/device-type correlation
-- machine-readable JSON output
-- deterministic findings and device summaries
-- vulnerability-candidate detection from explicit software fingerprints
-- compromise-indicator detection with confidence levels
-- Python 3.11/3.12/3.13 CI
-- Ruff lint and formatting checks
-- standard-library runtime only
-
-## Why discovery matters
-
-A port scanner can tell you that `192.168.1.50:554` is reachable.
-
-VoidWalker v2.1 tries to add context:
+VoidWalker tries to turn those isolated facts into something more useful:
 
 ```text
 192.168.1.50
-  device type: camera
-  vendor: Hikvision
+  type: embedded / IoT device
   discovery: mDNS
-  services:
-    RTSP
-    HTTP alternate
+  services: Telnet, ADB/debug
 
-  HIGH exposure:
-    tcp/554 RTSP
-    tcp/8000 vendor management
-
-  triage:
-    multiple high-risk management surfaces reachable
-    confidence: low
+  HIGH: multiple botnet-targeted management surfaces reachable
+  confidence: low
+  action: investigate firmware, DNS and traffic
 ```
 
-The additional context helps prioritize which device should be inspected first.
+If collected evidence also contains a known malware-family string, the same host can be promoted to a **compromise indicator** with a higher severity while still avoiding the false claim that the device is definitely infected.
 
-## Vulnerability and compromise triage
+## Potentially compromised IoT detection
 
-VoidWalker deliberately distinguishes between three things.
+This is one of the main reasons VoidWalker exists.
 
-### Exposure findings
+The current triage engine can raise compromise-related signals when it observes:
 
-Examples:
+- explicit strings associated with **Mirai**, **Gafgyt/BASHLITE**, **Mozi**, or **Satori** in collected service/discovery evidence;
+- two or more reachable services from a set commonly targeted on embedded devices, including Telnet, alternate Telnet, ADB/debug, TR-069/CWMP and legacy vendor-management ports.
 
-- Telnet reachable
-- ADB/debug service reachable
-- TR-069/CWMP reachable
-- RTSP camera stream endpoint reachable
-- legacy vendor-management port reachable
-- cleartext MQTT reachable
+Example:
 
-These are **security exposures**, not proof of a vulnerability or infection.
+```text
+[CRITICAL] 192.168.50.34 compromise-indicator / confidence=medium
+           Mirai family string observed in device/service evidence
 
-### Vulnerability candidates
+[HIGH]     192.168.50.34 compromise-suspicion / confidence=low
+           Multiple botnet-targeted management surfaces are reachable
+           evidence: tcp/23, tcp/5555
+```
 
-When the collected evidence contains a sufficiently specific software fingerprint, VoidWalker can map it to known vulnerability candidates.
+That means **"investigate this device now"**, not **"VoidWalker proved malware is running"**.
 
-Current built-in examples include:
+Follow-up should include traffic inspection, DNS review, model/firmware validation and vendor-specific analysis where available.
 
-| Fingerprint | Candidate | Confidence |
+See [`docs/DETECTION_MODEL.md`](docs/DETECTION_MODEL.md) for the exact reasoning and confidence model.
+
+## Vulnerability candidates
+
+VoidWalker can also identify explicit software fingerprints that are strong enough to justify a CVE candidate.
+
+| Observed fingerprint | Candidate | Confidence |
 | --- | --- | --- |
 | RomPager `4.34` or earlier | CVE-2014-9222 | High |
 | Boa `0.94.14rc21` | CVE-2018-21027, CVE-2018-21028 | High |
 
-A candidate still requires confirmation of the actual device model, firmware, and vendor integration before being treated as a confirmed vulnerability.
+A candidate still requires confirmation of the device model, firmware and vendor integration before being treated as a confirmed vulnerability.
 
-### Compromise indicators
+## Quick start
 
-VoidWalker also looks for investigation signals such as:
-
-- explicit malware-family strings observed in collected service/discovery evidence
-- multiple botnet-targeted management/debug surfaces reachable on the same embedded host
-
-The report always includes a confidence level.
-
-An indicator is **not a malware verdict**. A suspicious device should be followed up with firmware validation, traffic inspection, DNS review, process/file-system analysis where available, and vendor-specific checks.
-
-See [`docs/DETECTION_MODEL.md`](docs/DETECTION_MODEL.md) for the exact reasoning model.
-
-## IoT TCP profile
-
-The default `iot` profile checks services commonly relevant to embedded-device exposure and triage, including:
-
-```text
-21      FTP
-23      Telnet
-81      alternate HTTP
-445     SMB
-554     RTSP
-631     IPP
-1883    MQTT
-2323    alternate Telnet
-4321    uncommon embedded service
-5431    vendor/UPnP control
-5555    ADB/debug
-7547    TR-069/CWMP
-8000    vendor/web management
-8080    alternate HTTP/admin
-8443    alternate HTTPS/admin
-8888    alternate HTTP
-37215   legacy vendor management
-52869   vendor SDK service
-```
-
-SSDP `UDP/1900` and mDNS `UDP/5353` are handled by the discovery layer and are intentionally **not** misreported as TCP findings.
-
-## Requirements
+Requirements:
 
 - Python 3.11+
 - no third-party runtime dependencies
 
-## Usage
-
-Basic local audit:
+Audit the detected local `/24`:
 
 ```bash
 python VoidWalker.py
 ```
 
-Explicit private subnet:
+Audit an explicit private subnet:
 
 ```bash
 python VoidWalker.py --network 192.168.1.0/24
-```
-
-Use the larger common-service profile:
-
-```bash
-python VoidWalker.py --network 192.168.1.0/24 --profile common
-```
-
-Custom TCP ports:
-
-```bash
-python VoidWalker.py --network 192.168.1.0/24 --ports 22,80,443,554,8000-8010
 ```
 
 JSON output:
@@ -189,95 +128,69 @@ JSON output:
 python VoidWalker.py --network 192.168.1.0/24 --json
 ```
 
-Pure TCP scanner mode with discovery disabled:
+Disable multicast discovery and use TCP-only mode:
 
 ```bash
 python VoidWalker.py --network 192.168.1.0/24 --discovery off
 ```
 
-SSDP only:
+Use a custom port set:
 
 ```bash
-python VoidWalker.py --network 192.168.1.0/24 --discovery ssdp
+python VoidWalker.py --network 192.168.1.0/24 --ports 22,80,443,554,8000-8010
 ```
 
-Skip SSDP XML description fetching:
-
-```bash
-python VoidWalker.py --network 192.168.1.0/24 --no-descriptions
-```
-
-Tune concurrency and timeouts:
-
-```bash
-python VoidWalker.py \
-  --network 192.168.1.0/24 \
-  --workers 96 \
-  --timeout 0.5 \
-  --banner-timeout 0.2 \
-  --discovery-timeout 0.8
-```
-
-Version:
-
-```bash
-python VoidWalker.py --version
-```
-
-## CLI
+## How it works
 
 ```text
--n, --network CIDR
---profile {iot,common}
--p, --ports PORTS
--w, --workers N
---timeout SECONDS
---banner-timeout SECONDS
---discovery {off,ssdp,mdns,all}
---discovery-timeout SECONDS
---no-descriptions
---json
---version
+private/local IPv4 scope
+        │
+        ├── bounded concurrent TCP connect scan
+        ├── SSDP / UPnP discovery
+        ├── mDNS / DNS-SD discovery
+        ├── bounded same-host device-description metadata
+        │
+        ▼
+ device/vendor/type correlation
+        │
+        ├── exposure findings
+        ├── vulnerability fingerprints
+        └── compromise indicators
+        │
+        ▼
+ terminal report or JSON
 ```
 
-## SSDP safety boundary
+### Discovery
 
-When SSDP returns a `LOCATION` URL, VoidWalker can fetch the UPnP device-description XML to obtain fields such as:
+VoidWalker queries local SSDP/UPnP and mDNS/DNS-SD services and correlates records by host. Where permitted by its safety boundary, it can fetch the same host's UPnP device-description XML to obtain fields such as friendly name, manufacturer, model and device type.
 
-- friendly name
-- manufacturer
-- model
-- model number
-- UPnP device type
+### TCP exposure
 
-The description fetch is intentionally constrained:
+The default IoT profile includes services commonly relevant to embedded-device triage, including FTP, Telnet, SMB, RTSP, IPP, MQTT, ADB/debug, TR-069/CWMP, alternate web-management ports and selected legacy vendor-management services.
 
-- HTTP only
-- literal host must match the SSDP responder
-- no cross-host fetch
-- no authentication
-- no redirect following
-- response capped at 64 KiB
+### Evidence collection
 
-This is metadata collection, not exploitation.
+Service evidence is intentionally lightweight: passive banners where available and minimal HTTP `HEAD` requests for selected web services. There is no authentication attack, exploitation or remote command execution.
 
-## mDNS discovery
+## Safety boundaries
 
-VoidWalker requests common local DNS-SD service types such as:
+VoidWalker is intentionally constrained:
 
-- HTTP / HTTPS
-- RTSP
-- MQTT
-- SSH
-- IPP / printer
-- Google Cast
-- HomeKit
+- private, loopback or link-local IPv4 only;
+- public Internet ranges are rejected;
+- maximum 4096 addresses per scope;
+- no credential attacks;
+- no exploitation;
+- no persistence;
+- no remote command execution;
+- SSDP description retrieval is same-host, HTTP-only, capped and does not follow redirects.
 
-The parser correlates PTR, SRV, TXT, and IPv4 A records to produce host/service metadata.
+This keeps the project focused on **authorized discovery and defensive triage**.
 
-## JSON output
+## JSON model
 
-JSON reports include:
+Reports expose:
 
 ```text
 tool
@@ -293,76 +206,33 @@ duration_ms
 interrupted
 ```
 
-This makes VoidWalker usable as a standalone CLI tool or as a data source for a larger security workflow.
+This makes VoidWalker usable both as a standalone CLI and as a data source for a larger security workflow.
 
-## Design principles
-
-**Find risky IoT devices, not just open ports**  
-The scan, discovery, fingerprinting, and triage layers are correlated by host.
-
-**Evidence before verdicts**  
-Open ports are exposures. Vulnerability claims require a specific fingerprint. Infection-related output is presented as an indicator with a confidence level.
-
-**Local-network focus**  
-Public Internet ranges are intentionally rejected.
-
-**No exploitation**  
-VoidWalker does not validate vulnerabilities by triggering them. It produces defensive investigation leads.
-
-**Zero-dependency runtime**  
-The scanner and discovery parsers use only the Python standard library.
-
-## Testing
-
-Run the complete suite:
+## Testing and CI
 
 ```bash
 python -m unittest discover -s tests -v
-```
-
-Compile check:
-
-```bash
 python -m compileall -q .
 ```
 
-Optional Ruff development checks:
-
-```bash
-python -m pip install ruff
-ruff check .
-ruff format --check .
-```
-
-Tests include localhost-only TCP integration tests and offline parser/signature tests. CI does not scan external systems.
+CI runs on Python 3.11, 3.12 and 3.13 and also validates Ruff lint/format checks. Tests use localhost-only TCP integration and offline parser/signature fixtures; CI does not scan external systems.
 
 ## Limitations
 
-VoidWalker is a triage tool, not a replacement for a full vulnerability scanner, EDR, packet-analysis platform, or firmware-analysis workflow.
+VoidWalker is a triage tool, not a replacement for a vulnerability scanner, EDR, packet-analysis platform or firmware-analysis workflow.
 
-Important limitations:
+Current limitations include IPv4-only operation, no authenticated device inspection, no SNMP inventory, no firmware reverse engineering, multicast dependence on local network behavior, and the fact that malware frequently exposes no recognizable banner at all.
 
-- IPv4 only
-- no authenticated device inspection
-- no SNMP inventory
-- no firmware download or reverse engineering
-- no exploit-based vulnerability confirmation
-- multicast discovery depends on local network and firewall behavior
-- not every IoT device advertises SSDP or mDNS
-- malware often does not expose a recognizable banner
-- vendor inference is heuristic unless the device advertises explicit metadata
+## Documentation
+
+- [Synthetic demo](docs/DEMO.md)
+- [Detection and confidence model](docs/DETECTION_MODEL.md)
+- [Security model](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## Legal and ethical use
 
 Use VoidWalker only on networks and devices you own or are explicitly authorized to assess.
-
-## Security model
-
-See [`SECURITY.md`](SECURITY.md).
-
-## Changelog
-
-See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
