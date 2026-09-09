@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.1 - 2026-09-09
+
+### Documentation
+
+- rebuilt the README around the actual user outcome: IoT discovery, exposure prioritization, vulnerability candidates, and potential-compromise triage
+- added a visual end-to-end triage flow
+- added a terminal-style synthetic lab screenshot based on the current report format
+- added `docs/DEMO.md` with a full synthetic walkthrough and interpretation guidance
+- moved deeper implementation detail below the product/demo explanation so the project purpose is clear before the internals
+- made the distinction between **investigation lead** and **confirmed infection** explicit throughout the public presentation
+
 ## 2.1.0
 
 ### Added
