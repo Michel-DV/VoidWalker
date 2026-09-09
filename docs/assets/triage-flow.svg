@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">VoidWalker IoT triage flow</title>
+  <desc id="desc">A visual flow from local network discovery to device identity, exposure analysis, vulnerability candidates, and compromise indicators.</desc>
+  <rect width="1280" height="360" rx="24" fill="#0b0f0d"/>
+  <text x="64" y="62" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#eef7f1">What VoidWalker does in one run</text>
+  <text x="64" y="94" font-family="Inter, Arial, sans-serif" font-size="16" fill="#8ca398">Discover local IoT → add identity → find risky exposure → surface evidence worth investigating</text>
+  <g font-family="Inter, Arial, sans-serif">
+    <g transform="translate(60,130)">
+      <rect width="220" height="150" rx="18" fill="#111814" stroke="#263a30" stroke-width="2"/>
+      <text x="24" y="38" font-size="14" font-weight="700" fill="#39ff88">01 · DISCOVER</text>
+      <text x="24" y="72" font-size="20" font-weight="700" fill="#eef7f1">Find IoT hosts</text>
+      <text x="24" y="102" font-size="15" fill="#8ca398">TCP + SSDP + mDNS</text>
+      <text x="24" y="126" font-size="15" fill="#8ca398">private/local networks only</text>
+    </g>
+    <path d="M290 205 H330" stroke="#39ff88" stroke-width="3"/><path d="M322 197 L332 205 L322 213" fill="none" stroke="#39ff88" stroke-width="3"/>
+    <g transform="translate(340,130)">
+      <rect width="220" height="150" rx="18" fill="#111814" stroke="#263a30" stroke-width="2"/>
+      <text x="24" y="38" font-size="14" font-weight="700" fill="#39ff88">02 · IDENTIFY</text>
+      <text x="24" y="72" font-size="20" font-weight="700" fill="#eef7f1">Add device context</text>
+      <text x="24" y="102" font-size="15" fill="#8ca398">vendor · model · type</text>
+      <text x="24" y="126" font-size="15" fill="#8ca398">services · discovery source</text>
+    </g>
+    <path d="M570 205 H610" stroke="#39ff88" stroke-width="3"/><path d="M602 197 L612 205 L602 213" fill="none" stroke="#39ff88" stroke-width="3"/>
+    <g transform="translate(620,130)">
+      <rect width="220" height="150" rx="18" fill="#111814" stroke="#263a30" stroke-width="2"/>
+      <text x="24" y="38" font-size="14" font-weight="700" fill="#39ff88">03 · PRIORITIZE</text>
+      <text x="24" y="72" font-size="20" font-weight="700" fill="#eef7f1">Spot risky exposure</text>
+      <text x="24" y="102" font-size="15" fill="#8ca398">Telnet · ADB · RTSP</text>
+      <text x="24" y="126" font-size="15" fill="#8ca398">legacy management surfaces</text>
+    </g>
+    <path d="M850 205 H890" stroke="#39ff88" stroke-width="3"/><path d="M882 197 L892 205 L882 213" fill="none" stroke="#39ff88" stroke-width="3"/>
+    <g transform="translate(900,130)">
+      <rect width="320" height="150" rx="18" fill="#111814" stroke="#39ff88" stroke-width="2"/>
+      <text x="24" y="38" font-size="14" font-weight="700" fill="#39ff88">04 · TRIAGE</text>
+      <text x="24" y="72" font-size="20" font-weight="700" fill="#eef7f1">Potential compromise signals</text>
+      <text x="24" y="102" font-size="15" fill="#8ca398">CVE fingerprints · malware-family strings</text>
+      <text x="24" y="126" font-size="15" fill="#8ca398">botnet-targeted service combinations</text>
+    </g>
+  </g>
+  <text x="64" y="326" font-family="Inter, Arial, sans-serif" font-size="14" fill="#5f7569">VoidWalker reports evidence and confidence. It does not claim that an indicator alone proves infection.</text>
+</svg>
